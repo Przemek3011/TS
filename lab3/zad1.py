@@ -4,7 +4,7 @@ from itertools import zip_longest      # do sprawdzania także różnej liczby l
 warnings.simplefilter("always")
 
 FLAG = "01111110"
-GEN  = "1001"          # wielomian x³ + 1 → 3-bitowa reszta CRC
+GEN = "100000111"  # CRC-8 (x⁸ + x² + x + 1)
 # ────────────────────────────────────────────────────────────
 #  Funkcje pomocnicze: XOR i dzielenie modulo-2
 # ────────────────────────────────────────────────────────────
@@ -22,11 +22,11 @@ def div_rem(data: str) -> str:
     return rem
 
 def crc(data: str) -> str:
-    return div_rem(data + '0' * (len(GEN) - 1))
+    return div_rem(data +'0' * (len(GEN) - 1))
 # ────────────────────────────────────────────────────────────
 #  Kodowanie: ramki + bit-stuffing
 # ────────────────────────────────────────────────────────────
-def encode(data: str, max_datasize: int = 32) -> list[str]:
+def encode(data: str, max_datasize: int = 200) -> list[str]:
     frames, i = [], 0
     while i < len(data):
         cur = data[i:i+max_datasize] + crc(data[i:i+max_datasize])
@@ -42,24 +42,32 @@ def encode(data: str, max_datasize: int = 32) -> list[str]:
 # ────────────────────────────────────────────────────────────
 #  Dekodowanie
 # ────────────────────────────────────────────────────────────
-def decode(stream: str) -> tuple[str,int,int]:
+def decode(stream: str) -> tuple[str, int, int]:
     frames = list(filter(None, stream.split(FLAG)))
     decoded, ok, bad = [], 0, 0
     for frame in frames:
-        current, i, ones = '', 0, 0
+        current, ones = '', 0
+        i = 0
         while i < len(frame):
-            current += frame[i]
-            if frame[i] == '1':
+            bit = frame[i]
+            current += bit
+            if bit == '1':
                 ones += 1
-                if ones == 5: i += 1; ones = 0  # pomijamy wstawiony '0'
+                if ones == 5:
+                    # sprawdzamy: czy po pięciu jedynkach występuje zero (stuffing)
+                    if i + 1 < len(frame) and frame[i+1] == '0':
+                        i += 1  # pomijamy to '0'
+                    ones = 0
             else:
                 ones = 0
             i += 1
-        if div_rem(current) != '0'*(len(GEN)-1):
+        # weryfikacja CRC
+        if div_rem(current) != '0' * (len(GEN) - 1):
             warn(f"Frame containing {frame} omitted."); bad += 1
         else:
-            decoded.append(current[:-(len(GEN)-1)]); ok += 1
+            decoded.append(current[:-(len(GEN) - 1)]); ok += 1
     return ''.join(decoded), ok, bad
+
 # ────────────────────────────────────────────────────────────
 #  Operacje na plikach
 # ────────────────────────────────────────────────────────────
@@ -87,10 +95,10 @@ def decode_frames(src: str, dst: str) -> None:
             ok += c_ok; bad += c_bad
             g.write(out + sep)
     print("Dekodowanie zakończone.")
-    print(f"Poprawnie zdekodowane ramki: {ok}\nUsunięte (uszkodzone) ramki: {bad}")
+    print(f"Poprawnie zdekodowane ramki: {ok}\n")
 
 # ────────────────────────────────────────────────────────────
-#  NOWA ❹ FUNKCJA – porównanie istniejących plików
+# porównanie istniejących plików
 # ────────────────────────────────────────────────────────────
 def compare_files(file1: str = "Z.txt", file2: str = "Z1.txt") -> None:
     """Porównaj dwa pliki linia-po-linii (bez ponownego kodowania/ dekodowania)."""
@@ -104,7 +112,7 @@ def compare_files(file1: str = "Z.txt", file2: str = "Z1.txt") -> None:
     except FileNotFoundError as e:
         print(f"Brak pliku: {e.filename}")
 # ────────────────────────────────────────────────────────────
-#  Funkcja testowa (wciąż dostępna jako opcja 3)
+#  Funkcja testowa 
 # ────────────────────────────────────────────────────────────
 def test_decoding() -> None:
     create_frames("Z.txt", "W.txt")
